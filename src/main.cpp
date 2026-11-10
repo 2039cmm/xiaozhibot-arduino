@@ -1,141 +1,122 @@
-// ESP-SparkBot 屏幕点屏验证（Arduino + Arduino_GFX）
-// 硬件：ST7789 1.3" 240x240 RGB565，SPI3_HOST，无复位脚，背光 GPIO46
+// ESP-SparkBot P1: LVGL 8.3.11 + 官方 SquareLine UI（title / home 两个屏）
 //
-// 【根因】本板 LCD 的 DC=GPIO43、CS=GPIO44，正好是 ESP32-S3 的 UART0 TXD/RXD。
-// 之前用 Serial.begin(115200) 会把 43/44 从 GPIO 切成 UART 功能，LCD 的
-// DC/CS 直接失效 -> 屏幕全黑；同时日志全从这两根 LCD 控制线跑出去，
-// USB 口一个字都收不到，于是表现为"既没画面也没串口输出"。
-// 结论：本板绝对不能用 Serial（UART0），日志改用 USBSerial（HWCDC）。
+// 硬件：ST7789 240x240，DC=43 CS=44 SCL=21 SDA=47 BLK=46，SPI mode 0
+// 注意：43/44 与 UART0 复用，全程禁止 Serial，日志走 USBSerial。
 
 #include <Arduino.h>
 #include <Arduino_GFX_Library.h>
 
-// 日志通道：USB-Serial-JTAG，占用 GPIO19/20，与 LCD 无关
+#include "lvgl.h"
+#include "ui.h"
+
 #define LOG USBSerial
 
-// ---- 引脚（来自原厂 BSP esp_sparkbot_bsp.h）----
+// ---------------- 面板 ----------------
 #define TFT_SCK   21
 #define TFT_MOSI  47
-#define TFT_CS    44   // 与 UART0 RXD 复用，禁止 Serial
-#define TFT_DC    43   // 与 UART0 TXD 复用，禁止 Serial
-#define TFT_RST   GFX_NOT_DEFINED   // 原板未接复位，靠上电复位
+#define TFT_CS    44
+#define TFT_DC    43
+#define TFT_RST   GFX_NOT_DEFINED
 #define TFT_BL    46
 
-// GFX 1.4.9 的 Arduino_ESP32SPI 用「总线索引」而非 host id：
-// S3 上 HSPI == 1，对应 SPI3_HOST；不要写成 SPI3_HOST(=2)，那样会越界。
-#define TFT_SPI_INDEX  HSPI
-#define TFT_SPI_FREQ   40000000     // 原厂 80MHz，这里先保守跑 40MHz
+#define TFT_SPI_INDEX HSPI
+#define TFT_SPI_FREQ  40000000
 
-Arduino_DataBus *bus = new Arduino_ESP32SPI(
-    TFT_DC, TFT_CS, TFT_SCK, TFT_MOSI, GFX_NOT_DEFINED, TFT_SPI_INDEX);
+#define SCREEN_W 240
+#define SCREEN_H 240
 
-// 【关键修复】这块屏只认 SPI mode 0。
-// Arduino_GFX 1.4.9 的 Arduino_ST7789::begin() 在 ESP32/S 上写死了
-//   _override_datamode = SPI_MODE3;
-// 没有任何对外接口能改回来，所以之前 GFX 一路黑屏、begin 却返回 true。
-// 这里继承一下，把 datamode 改回 mode 0 再走父类流程。
+// 这块屏只认 SPI mode 0；GFX 1.4.9 在 S3 上强制 mode 3，需子类改回
 class ST7789Mode0 : public Arduino_ST7789 {
  public:
   using Arduino_ST7789::Arduino_ST7789;
 
   bool begin(int32_t speed = GFX_NOT_DEFINED) override {
-    _override_datamode = SPI_MODE0;   // protected 成员，子类可写
-    return Arduino_TFT::begin(speed); // 跳过 Arduino_ST7789::begin 的强制 mode3
+    _override_datamode = SPI_MODE0;
+    return Arduino_TFT::begin(speed);
   }
 };
 
-// 240x240，offset 全 0；若显示方向/颜色不对，先调 rotation / ips
-Arduino_GFX *gfx = new ST7789Mode0(
-    bus, TFT_RST, 0 /* rotation */, true /* IPS */, 240, 240, 0, 0, 0, 0);
+static Arduino_DataBus *bus = new Arduino_ESP32SPI(
+    TFT_DC, TFT_CS, TFT_SCK, TFT_MOSI, GFX_NOT_DEFINED, TFT_SPI_INDEX);
 
-static inline void backlight(bool on) {
-  digitalWrite(TFT_BL, on ? HIGH : LOW);
+static Arduino_GFX *gfx = new ST7789Mode0(
+    bus, TFT_RST, 0, true, SCREEN_W, SCREEN_H, 0, 0, 0, 0);
+
+// ---------------- LVGL 缓冲区 ----------------
+// 20 行一条，240*20*2 = 9600 字节，SRAM 够用
+#define BUF_LINES 20
+static lv_color_t lv_buf[SCREEN_W * BUF_LINES];
+
+static void lv_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_p)
+{
+  const int32_t w = area->x2 - area->x1 + 1;
+  const int32_t h = area->y2 - area->y1 + 1;
+
+  // LV_COLOR_16_SWAP=1 时 LVGL 已按面板字节序排好，可直接推
+  gfx->draw16bitRGBBitmap(area->x1, area->y1, (uint16_t *)color_p, w, h);
+
+  lv_disp_flush_ready(drv);
 }
 
-// 失败时让背光明显闪烁，避免"黑屏但其实是跑挂了"无法区分
-static void failBlink(const char *reason) {
-  LOG.printf("    FAILED: %s\n", reason);
-  while (true) {
-    backlight(false);
-    delay(120);
-    backlight(true);
-    delay(880);
-  }
-}
-
-static void drawColorBars() {
-  const uint16_t colors[] = {RED, GREEN, BLUE, YELLOW, MAGENTA, CYAN, WHITE, BLACK};
-  int h = gfx->height() / 8;
-  for (int i = 0; i < 8; i++) {
-    gfx->fillRect(0, i * h, gfx->width(), h, colors[i]);
-  }
-}
-
-void setup() {
-  // 1) 最先开背光：即使后面 SPI 失败，也能确认背光这一路是通的
+void setup()
+{
+  // 背光先开，确认这一路正常
   pinMode(TFT_BL, OUTPUT);
-  backlight(true);
+  digitalWrite(TFT_BL, HIGH);
 
   LOG.begin();
-  delay(600);   // 等 USB 枚举/上位机打开
+  delay(600);
 
   LOG.println();
   LOG.println("========================================");
-  LOG.println("  ESP-SparkBot ST7789 bring-up");
+  LOG.println("  ESP-SparkBot P1 : LVGL + UI");
   LOG.println("========================================");
-  LOG.printf("  chip      : %s  rev %d\n", ESP.getChipModel(), ESP.getChipRevision());
-  LOG.printf("  cpu       : %lu MHz\n", (unsigned long)getCpuFrequencyMhz());
-  LOG.printf("  flash     : %lu MB\n", (unsigned long)(ESP.getFlashChipSize() >> 20));
-  LOG.printf("  psram     : %lu KB\n", (unsigned long)(ESP.getPsramSize() >> 10));
-  LOG.printf("  free heap : %lu\n", (unsigned long)ESP.getFreeHeap());
-  LOG.printf("  pins      : sck=%d mosi=%d cs=%d dc=%d bl=%d\n",
-             TFT_SCK, TFT_MOSI, TFT_CS, TFT_DC, TFT_BL);
+  LOG.printf("  chip  : %s\n", ESP.getChipModel());
+  LOG.printf("  flash : %lu MB\n", (unsigned long)(ESP.getFlashChipSize() >> 20));
+  LOG.printf("  heap  : %lu\n", (unsigned long)ESP.getFreeHeap());
+  LOG.flush();
 
-  // 2) 初始化面板
-  LOG.println("[1] gfx->begin() ...");
+  LOG.println("[1] lcd init");
   if (!gfx->begin(TFT_SPI_FREQ)) {
-    failBlink("gfx->begin() returned false");
+    LOG.println("    FAILED, halt");
+    while (true) {
+      digitalWrite(TFT_BL, LOW); delay(120);
+      digitalWrite(TFT_BL, HIGH); delay(880);
+    }
   }
+  gfx->fillScreen(BLACK);
   LOG.println("    ok");
 
-  // 3) 彩条，确认整屏都能刷到
-  LOG.println("[2] color bars");
-  gfx->fillScreen(BLACK);
-  drawColorBars();
-  delay(1200);
+  LOG.println("[2] lvgl init");
+  lv_init();
 
-  // 4) 文字 + 图形
-  LOG.println("[3] text and shapes");
-  gfx->fillScreen(BLACK);
-  gfx->setTextColor(WHITE);
-  gfx->setTextSize(3);
-  gfx->setCursor(38, 90);
-  gfx->println("SparkBot");
+  static lv_disp_draw_buf_t draw_buf;
+  lv_disp_draw_buf_init(&draw_buf, lv_buf, NULL, SCREEN_W * BUF_LINES);
 
-  gfx->setTextSize(2);
-  gfx->setTextColor(GREEN);
-  gfx->setCursor(46, 140);
-  gfx->println("240x240 OK");
+  static lv_disp_drv_t disp_drv;
+  lv_disp_drv_init(&disp_drv);
+  disp_drv.hor_res = SCREEN_W;
+  disp_drv.ver_res = SCREEN_H;
+  disp_drv.flush_cb = lv_flush_cb;
+  disp_drv.draw_buf = &draw_buf;
+  lv_disp_drv_register(&disp_drv);
+  LOG.println("    ok");
 
-  gfx->drawCircle(120, 120, 100, BLUE);
-  gfx->drawRect(10, 10, 220, 220, WHITE);
+  LOG.println("[3] ui init");
+  ui_init();
+  LOG.println("    ok");
 
-  LOG.println("[4] draw done, entering loop");
+  LOG.println("[4] ready");
 }
 
-void loop() {
-  // 心跳：证明 loop 在跑；同时把运行秒数刷到屏幕底部
+void loop()
+{
   static uint32_t last = 0;
-  static uint32_t sec = 0;
-  if (millis() - last > 1000) {
-    last = millis();
-    sec++;
-    LOG.printf("[hb] %lu s, heap=%lu\n", (unsigned long)sec, (unsigned long)ESP.getFreeHeap());
+  lv_timer_handler();
+  delay(5);
 
-    gfx->fillRect(0, 200, 240, 24, BLACK);
-    gfx->setTextSize(2);
-    gfx->setTextColor(CYAN);
-    gfx->setCursor(60, 202);
-    gfx->printf("%lu s", (unsigned long)sec);
+  if (millis() - last > 5000) {
+    last = millis();
+    LOG.printf("[hb] heap=%lu\n", (unsigned long)ESP.getFreeHeap());
   }
 }
