@@ -29,8 +29,23 @@
 Arduino_DataBus *bus = new Arduino_ESP32SPI(
     TFT_DC, TFT_CS, TFT_SCK, TFT_MOSI, GFX_NOT_DEFINED, TFT_SPI_INDEX);
 
+// 【关键修复】这块屏只认 SPI mode 0。
+// Arduino_GFX 1.4.9 的 Arduino_ST7789::begin() 在 ESP32/S 上写死了
+//   _override_datamode = SPI_MODE3;
+// 没有任何对外接口能改回来，所以之前 GFX 一路黑屏、begin 却返回 true。
+// 这里继承一下，把 datamode 改回 mode 0 再走父类流程。
+class ST7789Mode0 : public Arduino_ST7789 {
+ public:
+  using Arduino_ST7789::Arduino_ST7789;
+
+  bool begin(int32_t speed = GFX_NOT_DEFINED) override {
+    _override_datamode = SPI_MODE0;   // protected 成员，子类可写
+    return Arduino_TFT::begin(speed); // 跳过 Arduino_ST7789::begin 的强制 mode3
+  }
+};
+
 // 240x240，offset 全 0；若显示方向/颜色不对，先调 rotation / ips
-Arduino_GFX *gfx = new Arduino_ST7789(
+Arduino_GFX *gfx = new ST7789Mode0(
     bus, TFT_RST, 0 /* rotation */, true /* IPS */, 240, 240, 0, 0, 0, 0);
 
 static inline void backlight(bool on) {
