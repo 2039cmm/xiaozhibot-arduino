@@ -65,7 +65,7 @@
 - [x] **冒号闪烁**：补回 `blink_Animation(ui_colon, 0)` 调用，1Hz 呼吸已确认
 
 - [x] **P4 代码落地**：WiFi STA + SNTP 对时 + Open-Meteo 天气（免 key），编译 RAM 33.9%、Flash 27.4%
-- [ ] P4 上板验证：需先在 `include/app_secrets.h` 填入 WiFi 账号密码
+- [x] **P4 上板验证**：WiFi 连上（rssi -39）、SNTP 对时、时区 CST-8 正确、天气取到 13°C 少云、堆稳定不降
 
 ### 未开始
 
@@ -108,7 +108,7 @@
 | P1 | LVGL + UI 迁移 | title / home 正常显示 | ✅ 完成 |
 | P2 | 输入与传感器 | 三键翻页、BMI270 数据、电量百分比正确 | ⏸ 硬件缺失暂缓 |
 | P3 | 音频 | 能放 WAV，能录 PCM | ⬜ 待开始 |
-| P4 | 联网 | WiFi 连接、SNTP 校时、天气显示、大模型对话 | 🔧 代码完成，待填 WiFi |
+| P4 | 联网 | WiFi 连接、SNTP 校时、天气显示、大模型对话 | ✅ 前三项完成 |
 | P5 | 摄像头 / 动画 / 游戏 | 摄像头预览、开机动画、木鱼/骰子/2048 可玩 | ⬜ 待开始 |
 
 ---
@@ -121,6 +121,8 @@
 4. **PSRAM 实测为 0**：启动日志 `mode:DIO`，说明 `qio_opi` 没真正生效；`ESP.getPsramSize()` 返回 0。后续放动画帧/音频前必须补 `-DBOARD_HAS_PSRAM` 并复核 bootloader 配置。
 5. **分区表未规划**：16MB Flash 仍用默认分区表。后续要放动画帧、音频、字库，必须自定义 `partitions.csv` + `data/` 资源镜像（官方是 4M app + ~11M 数据分区）。
 6. **隐藏屏动画陷阱**：SquareLine 会把部分动画（如首页冒号的 `blink_Animation`）挂在 `ui____initial_actions0` 这个隐藏屏的 `SCREEN_LOAD_START` 上，而不是目标屏自己。只搬 `ui_home.c` 会得到"画面正确但不动"的假象，需在 `ui_port.c` 里补调用。
+7. **`configTime()` 会覆写时区**：`configTime(0, 0, ...)` 末尾无条件调 `setTimeZone(0,0)`，把 TZ 改写成 `UTC0DST0`，对时后时间会早 8 小时。必须用 `configTzTime(APP_TZ, ...)`。见 `cores/esp32/esp32-hal-time.c:48`。
+8. **软复位不清 RTC 时间**：ESP-IDF 把系统时间放在 `RTC_DATA_ATTR` 区，`Hard resetting via RTS pin` 之类的软复位不会清空。烧录后第一次启动若已对时，之后抓日志时时间就是对的——排查时区问题时容易误判。
 
 ---
 

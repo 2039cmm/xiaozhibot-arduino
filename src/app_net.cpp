@@ -33,10 +33,15 @@ bool app_net_time_valid(void)
 
 static void start_sntp(void)
 {
-  // 传 0,0 表示不改时区，沿用上面 setenv 设的 APP_TZ
-  configTime(0, 0, APP_NTP1, APP_NTP2, APP_NTP3);
+  // 必须用 configTzTime，不能用 configTime。
+  // 看 cores/esp32/esp32-hal-time.c：configTime() 末尾无条件调用
+  //   setTimeZone(-gmtOffset_sec, daylightOffset_sec)
+  // 传 (0, 0) 时会执行 setenv("TZ", "UTC0DST0")，把我们的 CST-8 覆写成
+  // UTC —— 表现就是对时成功后屏幕时间比实际早 8 小时。
+  // configTzTime() 则直接用传入的 TZ 字符串，正是我们要的。
+  configTzTime(APP_TZ, APP_NTP1, APP_NTP2, APP_NTP3);
   s_sntp_started = true;
-  LOG.println("[net] sntp started");
+  LOG.printf("[net] sntp started, tz=%s\n", APP_TZ);
 }
 
 void app_net_init(void)

@@ -126,28 +126,42 @@ static bool fetch_once(void)
   return true;
 }
 
+// 等 WiFi 真正连上再抓，最多等 timeout_ms。
+// 不能用固定 delay：WiFi 关联 + DHCP 的耗时跟信号强度强相关，
+// 固定等 3 秒在弱信号下必然错过，白白浪费一次退避周期。
+static bool wait_wifi(uint32_t timeout_ms)
+{
+  const uint32_t t0 = millis();
+  while (WiFi.status() != WL_CONNECTED) {
+    if (millis() - t0 > timeout_ms) return false;
+    vTaskDelay(pdMS_TO_TICKS(500));
+  }
+  return true;
+}
+
 static void weather_task(void *arg)
 {
   (void)arg;
-  vTaskDelay(pdMS_TO_TICKS(3000));      // 等 WiFi 先连上
-
-  uint32_t fail_count = 0;
+  uint32_t fail = 0;
 
   for (;;) {
-    if (WiFi.status() == WL_CONNECTED) {
-      if (fetch_once()) {
-        fail_count = 0;
-        vTaskDelay(pdMS_TO_TICKS(APP_WEATHER_PERIOD_MS));
-        continue;
-      }
-      fail_count++;
-    } else {
-      fail_count++;
+    if (!wait_wifi(30000)) {
+      LOG.println("[wx] wifi 30s 未连上，10 秒后再看");
+      vTaskDelay(pdMS_TO_TICKS(10000));
+      continue;
     }
 
-    // 失败退避：最短 30 秒，最长 5 分钟，避免断网时疯狂重试
-    uint32_t backoff = 30000UL << (fail_count > 4 ? 4 : fail_count);
+    if (fetch_once()) {
+      fail = 0;
+      vTaskDelay(pdMS_TO_TICKS(APP_WEATHER_PERIOD_MS));
+      continue;
+    }
+
+    // 线性退避：10s / 20s / 30s ... 上限 5 分钟
+    fail++;
+    uint32_t backoff = 10000UL * fail;
     if (backoff > 300000UL) backoff = 300000UL;
+    LOG.printf("[wx] 重试间隔 %lu 秒\n", (unsigned long)(backoff / 1000));
     vTaskDelay(pdMS_TO_TICKS(backoff));
   }
 }
