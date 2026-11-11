@@ -123,17 +123,15 @@
 6. **隐藏屏动画陷阱**：SquareLine 会把部分动画（如首页冒号的 `blink_Animation`）挂在 `ui____initial_actions0` 这个隐藏屏的 `SCREEN_LOAD_START` 上，而不是目标屏自己。只搬 `ui_home.c` 会得到"画面正确但不动"的假象，需在 `ui_port.c` 里补调用。
 7. **`configTime()` 会覆写时区**：`configTime(0, 0, ...)` 末尾无条件调 `setTimeZone(0,0)`，把 TZ 改写成 `UTC0DST0`，对时后时间会早 8 小时。必须用 `configTzTime(APP_TZ, ...)`。见 `cores/esp32/esp32-hal-time.c:48`。
 8. **软复位不清 RTC 时间**：ESP-IDF 把系统时间放在 `RTC_DATA_ATTR` 区，`Hard resetting via RTS pin` 之类的软复位不会清空。烧录后第一次启动若已对时，之后抓日志时时间就是对的——排查时区问题时容易误判。
-9. **SquareLine 字体是子集，缺字静默变方框**：`lib/ui/fonts/*.c` 只包含设计稿里出现过的字符，缺字时 LVGL **不报错**，只画一个方框。实测字符集：
+9. **SquareLine 字体是子集，缺字静默变方框**：`lib/ui/fonts/*.c` 只包含设计稿里出现过的字符，缺字时 LVGL **不报错**，只画一个方框。实测子集字符数：
 
-   | 字体 | 用途 | 汉字数 |
-   |---|---|---|
-   | `OPPOSansH25` | 天气文字、星期 | 30 |
-   | `OPPOSansH18` | 日期 | 24 |
-   | `OPPOSansL70` | 温度大字 | 0（仅 ASCII + `°`） |
+   | 字体 | 用途 | 汉字数 | 现状 |
+   |---|---|---|---|
+   | ~~`OPPOSansH25`~~ | 天气文字、星期 | 30 | ✅ 已换成 `ui_font_zh25`（3755 字） |
+   | `OPPOSansH18` | 日期 | 24 | 仅用数字，暂无影响 |
+   | `OPPOSansL70` | 温度大字 | 0（仅 ASCII + `°`） | 仅用数字和 `°`，暂无影响 |
 
-   `OPPOSansH25` 可用汉字：`一三中二云五六冰功周四多大天子小德掷日晴转阴阵雨雪雷雹雾霾骰`
-
-   往标签里写中文字面量前必须确认字在表里。`app_clock_init()` 里有开机字形自检，缺字会打 `[font] "xxx" 缺字形: U+XXXX`。
+   往标签里写中文字面量前必须确认字在字库中。`app_clock_init()` 里有开机字形自检，缺字会打 `[font] "xxx" 缺字形: U+XXXX`。
 
 ---
 
@@ -183,3 +181,32 @@ xiaozhibot/
 用 [Open-Meteo](https://open-meteo.com/)，**免费、免注册、不需要 API key**。官方固件用的是和风天气，需要注册账号申请 key，这里换掉了。位置在 `app_config.h` 里改 `APP_LATITUDE_S` / `APP_LONGITUDE_S` 两个字符串。
 
 天气图标（`ui_weathershow`）暂时留空——官方那套图标是打包在 `asset_weather` 里的 mmap 资源，PSRAM 未启用的情况下放不进来，等分区表和 PSRAM 解决后再补。
+
+### 中文字体（重要）
+
+SquareLine 导出的字体是**子集**，只含设计稿里出现过的字符。`ui_font_OPPOSansH25` 只有 30 个汉字，写别的字会静默变成方框。
+
+因此中文文本改用自己的 `lib/ui/fonts/ui_font_zh25.c`：GB2312 一级字库 3755 字 + ASCII + 常用标点，25px、**bpp=1**（与原始设计一致，纯黑白不做抗锯齿）、RLE 压缩，编译后约 **266KB**，只占 Flash 不占 RAM。
+
+重新生成（需要 Node）：
+
+```bash
+# 只装一次
+npm install lv_font_conv
+
+# 生成：字符集见 tools/zh_charset_gb2312_l1.txt
+npx lv_font_conv --size 25 --bpp 1 --format lvgl \
+  --font "C:/Windows/Fonts/Deng.ttf" \
+  --symbols "$(cat tools/zh_charset_gb2312_l1.txt)" \
+  --lv-font-name ui_font_zh25 \
+  -o lib/ui/fonts/ui_font_zh25.c
+```
+
+要点：
+
+- `--lv-font-name` 必须和代码里的符号名一致
+- 生成文件里是 `#include "lvgl/lvgl.h"`，PlatformIO 找不到这个相对路径，所以 `platformio.ini` 里加了 `-DLV_LVGL_H_INCLUDE_SIMPLE` 让它改用 `#include "lvgl.h"`
+- 想换字形就换 `--font`：本机可选 `Deng.ttf`（等线）、`msyh.ttc`（微软雅黑）、`simhei.ttf`（黑体）
+- 字号与 bpp 对体积影响很大：同字符集下 bpp=1 约 266KB、bpp=2 约 422KB、bpp=4 约 736KB
+
+如果哪天要换成含生僻字或 emoji 的字库，注意 `ui_font_OPPOSansH18`（日期，24 字）和 `ui_font_OPPOSansL70`（温度大字，仅 ASCII + `°`）仍是子集，需要按同样方式重新生成。

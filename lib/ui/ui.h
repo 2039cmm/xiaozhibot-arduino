@@ -133,7 +133,7 @@ LV_IMG_DECLARE(ui_img_wifi_disconnection_png);   // assets/ui_img_wifi_disconnec
 LV_FONT_DECLARE(ui_font_ComfortaaBold75);
 LV_FONT_DECLARE(ui_font_ComfortaaLight70);
 LV_FONT_DECLARE(ui_font_OPPOSansH18);
-LV_FONT_DECLARE(ui_font_OPPOSansH25);
+LV_FONT_DECLARE(ui_font_zh25);
 LV_FONT_DECLARE(ui_font_OPPOSansL70);
 
 typedef struct {

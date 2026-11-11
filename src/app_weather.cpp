@@ -35,41 +35,38 @@ static SemaphoreHandle_t s_lock  = NULL;
 
 // WMO 天气代码 -> 中文短词
 //
-// 【重要】这里每个字都必须是 ui_font_OPPOSansH25 里真实存在的字形。
-// SquareLine 按设计稿里出现过的文字生成子集字体，OPPOSansH25 一共只有
-// 30 个汉字：
-//     一三中二云五六冰功周四多大天子小德掷日晴转阴阵雨雪雷雹雾霾骰
-// 不在这个集合里的字会渲染成方框（豆腐块）。
-// 例如 WMO 1 的官方叫法「少云」——「少」不在集合里，只能退成「晴」。
-// app_clock_init() 里有个自检会把遗漏的字打到串口，别绕过它。
+// 字体用的是 ui_font_zh25（GB2312 一级字库 3755 字 + ASCII，bpp=1），
+// 覆盖全部常用汉字，这里可以放心写正常说法。
+// 注意不要换成 ui_font_OPPOSansH25 —— SquareLine 导出的那个是只含 30 个
+// 汉字的子集字体，缺字会静默渲染成方框。
 const char *app_weather_code_text(int code)
 {
   switch (code) {
     case 0:                  return "晴";
-    case 1:                  return "晴";       // 少云（"少"缺字形）
+    case 1:                  return "少云";
     case 2:                  return "多云";
     case 3:                  return "阴";
     case 45: case 48:        return "雾";
 
-    case 51: case 53: case 55: return "小雨";   // 毛毛雨
-    case 56: case 57:          return "雨";     // 冻雨（"冻"缺字形）
+    case 51: case 53: case 55: return "毛毛雨";
+    case 56: case 57:          return "冻雨";
     case 61:                   return "小雨";
     case 63:                   return "中雨";
     case 65:                   return "大雨";
-    case 66: case 67:          return "雨";
+    case 66: case 67:          return "冻雨";
 
     case 71:                   return "小雪";
     case 73:                   return "中雪";
     case 75:                   return "大雪";
-    case 77:                   return "雪";     // 雪粒
+    case 77:                   return "雪粒";
 
     case 80: case 81: case 82: return "阵雨";
     case 85: case 86:          return "阵雪";
 
     case 95:                   return "雷阵雨";
-    case 96: case 99:          return "冰雹";   // 雷暴冰雹（"暴"缺字形）
+    case 96: case 99:          return "雷暴冰雹";
 
-    default:                   return "--";     // 未收录的代码，用 ASCII 兜底
+    default:                   return "--";
   }
 }
 

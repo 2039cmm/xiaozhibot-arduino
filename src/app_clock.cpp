@@ -32,12 +32,14 @@ static const char *const k_weekday[] = {
 
 // ---------------- 字形自检 ----------------
 //
-// SquareLine 生成的是子集字体：只包含设计稿里出现过的字
-// （OPPOSansH25 一共只有 30 个汉字）。写入字库以外的字，LVGL 不会报错，
-// 只会静默画一个方框。真实踩到的例子：WMO 1 的「少云」，「多」在字库里
-// 而「少」不在，于是显示成「□云」。
+// SquareLine 生成的是子集字体：只包含设计稿里出现过的字，缺字时 LVGL
+// 不报错、只静默画一个方框。真实踩过：WMO 1 的「少云」，「多」在字库里
+// 而「少」不在，显示成「□云」。
 //
-// 这里开机把所有会用到的文案扫一遍，缺字直接打到串口。
+// 现在中文改用自己用 lv_font_conv 生成的 ui_font_zh25
+// （GB2312 一级 3755 字 + ASCII + 常用标点，bpp=1，约 266KB）。
+// 常用字全覆盖，但自检保留：以后若有人换回子集字体，或写入生僻字、
+// emoji，这里会第一时间把缺的字打到串口，而不是让人盯着方框猜。
 
 static int utf8_decode(const char *s, uint32_t *cp)
 {
@@ -110,7 +112,7 @@ static void check_weather_table(void)
       seen[nseen++] = s;
     }
 
-    check_text(&ui_font_OPPOSansH25, s, s);
+    check_text(&ui_font_zh25, s, s);
   }
 }
 
@@ -193,7 +195,7 @@ void app_clock_init(void)
   // 先做字形自检，缺字会在串口里直接列出来
   check_weather_table();
   for (unsigned i = 0; i < sizeof(k_weekday) / sizeof(k_weekday[0]); i++) {
-    check_text(&ui_font_OPPOSansH25, k_weekday[i], k_weekday[i]);
+    check_text(&ui_font_zh25, k_weekday[i], k_weekday[i]);
   }
   check_text(&ui_font_OPPOSansL70, "--°", "--°");   // ui_temp 占位
   check_text(&ui_font_OPPOSansH18, "--/--", "--/--"); // ui_date 占位

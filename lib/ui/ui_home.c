@@ -68,7 +68,7 @@ void ui_home_screen_init(void)
     lv_label_set_text(ui_weekday, "周日");
     lv_obj_set_style_text_color(ui_weekday, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_opa(ui_weekday, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(ui_weekday, &ui_font_OPPOSansH25, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(ui_weekday, &ui_font_zh25, LV_PART_MAIN | LV_STATE_DEFAULT);
 
     ui_temp = lv_label_create(ui_Panel1);
     lv_obj_set_width(ui_temp, LV_SIZE_CONTENT);   /// 1
@@ -90,7 +90,7 @@ void ui_home_screen_init(void)
     lv_label_set_text(ui_weather, "多云");
     lv_obj_set_style_text_color(ui_weather, lv_color_hex(0xF1BA3B), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_opa(ui_weather, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(ui_weather, &ui_font_OPPOSansH25, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(ui_weather, &ui_font_zh25, LV_PART_MAIN | LV_STATE_DEFAULT);
 
     ui_colon = lv_label_create(ui_Panel1);
     lv_obj_set_width(ui_colon, LV_SIZE_CONTENT);   /// 1
