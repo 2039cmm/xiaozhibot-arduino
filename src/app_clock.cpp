@@ -26,6 +26,94 @@ static void set_text(lv_obj_t *label, const char *s)
   lv_label_set_text(label, s);
 }
 
+static const char *const k_weekday[] = {
+  "周日", "周一", "周二", "周三", "周四", "周五", "周六"
+};
+
+// ---------------- 字形自检 ----------------
+//
+// SquareLine 生成的是子集字体：只包含设计稿里出现过的字
+// （OPPOSansH25 一共只有 30 个汉字）。写入字库以外的字，LVGL 不会报错，
+// 只会静默画一个方框。真实踩到的例子：WMO 1 的「少云」，「多」在字库里
+// 而「少」不在，于是显示成「□云」。
+//
+// 这里开机把所有会用到的文案扫一遍，缺字直接打到串口。
+
+static int utf8_decode(const char *s, uint32_t *cp)
+{
+  const uint8_t *p = (const uint8_t *)s;
+
+  if (p[0] < 0x80) {
+    *cp = p[0];
+    return 1;
+  }
+  if ((p[0] & 0xE0) == 0xC0) {
+    *cp = ((uint32_t)(p[0] & 0x1F) << 6) | (p[1] & 0x3F);
+    return 2;
+  }
+  if ((p[0] & 0xF0) == 0xE0) {
+    *cp = ((uint32_t)(p[0] & 0x0F) << 12) |
+          ((uint32_t)(p[1] & 0x3F) << 6) | (p[2] & 0x3F);
+    return 3;
+  }
+  if ((p[0] & 0xF8) == 0xF0) {
+    *cp = ((uint32_t)(p[0] & 0x07) << 18) |
+          ((uint32_t)(p[1] & 0x3F) << 12) |
+          ((uint32_t)(p[2] & 0x3F) << 6) | (p[3] & 0x3F);
+    return 4;
+  }
+  *cp = p[0];
+  return 1;
+}
+
+static void check_text(const lv_font_t *font, const char *tag, const char *s)
+{
+  if (font == NULL || s == NULL) return;
+
+  bool bad = false;
+  for (const char *p = s; *p; ) {
+    uint32_t cp = 0;
+    const int n = utf8_decode(p, &cp);
+    p += n;
+
+    lv_font_glyph_dsc_t dsc;
+    if (lv_font_get_glyph_dsc(font, &dsc, cp, 0)) {
+      continue;
+    }
+    if (!bad) {
+      LOG.printf("[font] \"%s\" 缺字形:", tag);
+      bad = true;
+    }
+    LOG.printf(" U+%04lX", (unsigned long)cp);
+  }
+  if (bad) LOG.println();
+}
+
+static void check_weather_table(void)
+{
+  const char *seen[16];
+  int nseen = 0;
+
+  for (int code = -1; code <= 99; code++) {
+    const char *s = app_weather_code_text(code);
+    if (s == NULL) continue;
+
+    bool dup = false;
+    for (int i = 0; i < nseen; i++) {
+      if (seen[i] == s) {          // 同一个字面量，只查一次
+        dup = true;
+        break;
+      }
+    }
+    if (dup) continue;
+    if (nseen < (int)(sizeof(seen) / sizeof(seen[0]))) {
+      seen[nseen++] = s;
+    }
+
+    check_text(&ui_font_OPPOSansH25, s, s);
+  }
+}
+
 static void clock_tick(lv_timer_t *timer)
 {
   (void)timer;
@@ -51,10 +139,6 @@ static void clock_tick(lv_timer_t *timer)
     snprintf(min_str,  sizeof(min_str),  "%02d", ti.tm_min);
     snprintf(time_str, sizeof(time_str), "%02d:%02d", ti.tm_hour, ti.tm_min);
     snprintf(date_str, sizeof(date_str), "%02d/%02d", ti.tm_mon + 1, ti.tm_mday);
-
-    static const char *const k_weekday[] = {
-      "周日", "周一", "周二", "周三", "周四", "周五", "周六"
-    };
     snprintf(weekday_str, sizeof(weekday_str), "%s", k_weekday[ti.tm_wday]);
   }
 
@@ -106,6 +190,15 @@ static void clock_tick(lv_timer_t *timer)
 
 void app_clock_init(void)
 {
+  // 先做字形自检，缺字会在串口里直接列出来
+  check_weather_table();
+  for (unsigned i = 0; i < sizeof(k_weekday) / sizeof(k_weekday[0]); i++) {
+    check_text(&ui_font_OPPOSansH25, k_weekday[i], k_weekday[i]);
+  }
+  check_text(&ui_font_OPPOSansL70, "--°", "--°");   // ui_temp 占位
+  check_text(&ui_font_OPPOSansH18, "--/--", "--/--"); // ui_date 占位
+  LOG.println("[font] glyph check done");
+
   lv_timer_t *t = lv_timer_create(clock_tick, 1000, NULL);
   if (t == NULL) {
     LOG.println("[clk] timer create failed");

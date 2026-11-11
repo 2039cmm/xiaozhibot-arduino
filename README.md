@@ -123,6 +123,17 @@
 6. **隐藏屏动画陷阱**：SquareLine 会把部分动画（如首页冒号的 `blink_Animation`）挂在 `ui____initial_actions0` 这个隐藏屏的 `SCREEN_LOAD_START` 上，而不是目标屏自己。只搬 `ui_home.c` 会得到"画面正确但不动"的假象，需在 `ui_port.c` 里补调用。
 7. **`configTime()` 会覆写时区**：`configTime(0, 0, ...)` 末尾无条件调 `setTimeZone(0,0)`，把 TZ 改写成 `UTC0DST0`，对时后时间会早 8 小时。必须用 `configTzTime(APP_TZ, ...)`。见 `cores/esp32/esp32-hal-time.c:48`。
 8. **软复位不清 RTC 时间**：ESP-IDF 把系统时间放在 `RTC_DATA_ATTR` 区，`Hard resetting via RTS pin` 之类的软复位不会清空。烧录后第一次启动若已对时，之后抓日志时时间就是对的——排查时区问题时容易误判。
+9. **SquareLine 字体是子集，缺字静默变方框**：`lib/ui/fonts/*.c` 只包含设计稿里出现过的字符，缺字时 LVGL **不报错**，只画一个方框。实测字符集：
+
+   | 字体 | 用途 | 汉字数 |
+   |---|---|---|
+   | `OPPOSansH25` | 天气文字、星期 | 30 |
+   | `OPPOSansH18` | 日期 | 24 |
+   | `OPPOSansL70` | 温度大字 | 0（仅 ASCII + `°`） |
+
+   `OPPOSansH25` 可用汉字：`一三中二云五六冰功周四多大天子小德掷日晴转阴阵雨雪雷雹雾霾骰`
+
+   往标签里写中文字面量前必须确认字在表里。`app_clock_init()` 里有开机字形自检，缺字会打 `[font] "xxx" 缺字形: U+XXXX`。
 
 ---
 
