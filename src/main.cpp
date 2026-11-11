@@ -73,6 +73,7 @@ void setup()
   LOG.println("========================================");
   LOG.printf("  chip  : %s\n", ESP.getChipModel());
   LOG.printf("  flash : %lu MB\n", (unsigned long)(ESP.getFlashChipSize() >> 20));
+  LOG.printf("  psram : %lu\n", (unsigned long)ESP.getPsramSize());
   LOG.printf("  heap  : %lu\n", (unsigned long)ESP.getFreeHeap());
   LOG.flush();
 

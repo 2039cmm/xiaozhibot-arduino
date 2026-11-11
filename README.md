@@ -61,10 +61,11 @@
 - [x] **烧录点亮**：确认硬件通路，串口日志与画面均正常
 
 - [x] **P1 代码落地**：LVGL 8.3.11 + 官方 SquareLine UI（title / home）编译，RAM 29.2%、Flash 16.3%
+- [x] **P1 上板验证**：时钟首页完整渲染（Comfortaa 大数字 + OPPOSans 中文星期），`heap` 稳定不泄漏
+- [ ] 冒号闪烁（`blink_Animation`）已补上调用并烧录，待目视确认
 
 ### 未开始
 
-- [ ] P1 上板验证（串口未枚举，等设备接回）
 - [ ] 触摸 / IMU / 电量
 - [ ] 音频
 - [ ] 联网功能
@@ -100,7 +101,7 @@
 | 阶段 | 内容 | 验收标准 | 状态 |
 |---|---|---|---|
 | P0 | 点屏 + 工程骨架 | 彩条无残影，文字清晰 | ✅ 完成 |
-| P1 | LVGL + UI 迁移 | title / home 正常显示 | 代码完成，待上板 |
+| P1 | LVGL + UI 迁移 | title / home 正常显示 | 🔧 画面已通，动画待确认 |
 | P2 | 输入与传感器 | 三键翻页、BMI270 数据、电量百分比正确 | ⬜ 待开始 |
 | P3 | 音频 | 能放 WAV，能录 PCM | ⬜ 待开始 |
 | P4 | 联网 | WiFi 连接、SNTP 校时、天气显示、大模型对话 | ⬜ 待开始 |
@@ -113,8 +114,9 @@
 1. **`HSPI` 宏陷阱**：`src/main.cpp` 里 `#ifndef HSPI / #define HSPI SPI3_HOST` 实际不生效——arduino-esp32 2.0.17 已把 S3 的 `HSPI` 定义为 `1`，而 GFX 1.4.9 把这个参数当 `_spi_bus_array[]` 的下标用，恰好下标 1 就是 SPI3，属于"碰巧正确"。升级到 GFX 1.6 / arduino 3.x 语义会变，需要复核。
 2. **SPI mode 不一致**：原厂是 mode 2，Arduino_GFX 固定 mode 0。若出现偶发花屏或首帧错位，第一嫌疑在此。
 3. **反色与偏移**：原厂 `esp_lcd_panel_invert_color(true)`，GFX 用 `ips=true` 近似。颜色反了就把 `ips` 改 `false`；整幅图偏 80px 说明是 240x320 玻璃。
-4. **PSRAM 未校验**：`board_build.arduino.memory_type = qio_opi` 是否真正生效，需在 setup 里打印 `ESP.getPsramSize()` 确认。
+4. **PSRAM 实测为 0**：启动日志 `mode:DIO`，说明 `qio_opi` 没真正生效；`ESP.getPsramSize()` 返回 0。后续放动画帧/音频前必须补 `-DBOARD_HAS_PSRAM` 并复核 bootloader 配置。
 5. **分区表未规划**：16MB Flash 仍用默认分区表。后续要放动画帧、音频、字库，必须自定义 `partitions.csv` + `data/` 资源镜像（官方是 4M app + ~11M 数据分区）。
+6. **隐藏屏动画陷阱**：SquareLine 会把部分动画（如首页冒号的 `blink_Animation`）挂在 `ui____initial_actions0` 这个隐藏屏的 `SCREEN_LOAD_START` 上，而不是目标屏自己。只搬 `ui_home.c` 会得到"画面正确但不动"的假象，需在 `ui_port.c` 里补调用。
 
 ---
 
