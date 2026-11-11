@@ -62,13 +62,17 @@
 
 - [x] **P1 代码落地**：LVGL 8.3.11 + 官方 SquareLine UI（title / home）编译，RAM 29.2%、Flash 16.3%
 - [x] **P1 上板验证**：时钟首页完整渲染（Comfortaa 大数字 + OPPOSans 中文星期），`heap` 稳定不泄漏
-- [ ] 冒号闪烁（`blink_Animation`）已补上调用并烧录，待目视确认
+- [x] **冒号闪烁**：补回 `blink_Animation(ui_colon, 0)` 调用，1Hz 呼吸已确认
+
+- [x] **P4 代码落地**：WiFi STA + SNTP 对时 + Open-Meteo 天气（免 key），编译 RAM 33.9%、Flash 27.4%
+- [ ] P4 上板验证：需先在 `include/app_secrets.h` 填入 WiFi 账号密码
 
 ### 未开始
 
-- [ ] 触摸 / IMU / 电量
-- [ ] 音频
-- [ ] 联网功能
+- [ ] 触摸（板上无触摸焊盘，待定：接铜箔还是改轻触按键）
+- [ ] IMU（无 BMI270 硬件，跳过）
+- [ ] 电量（无电池，跳过）
+- [ ] 音频（有喇叭，待定 I2S 直推还是补 ES8311）
 - [ ] 摄像头 / 动画 / 小游戏
 
 ### 当前工具链
@@ -101,10 +105,10 @@
 | 阶段 | 内容 | 验收标准 | 状态 |
 |---|---|---|---|
 | P0 | 点屏 + 工程骨架 | 彩条无残影，文字清晰 | ✅ 完成 |
-| P1 | LVGL + UI 迁移 | title / home 正常显示 | 🔧 画面已通，动画待确认 |
-| P2 | 输入与传感器 | 三键翻页、BMI270 数据、电量百分比正确 | ⬜ 待开始 |
+| P1 | LVGL + UI 迁移 | title / home 正常显示 | ✅ 完成 |
+| P2 | 输入与传感器 | 三键翻页、BMI270 数据、电量百分比正确 | ⏸ 硬件缺失暂缓 |
 | P3 | 音频 | 能放 WAV，能录 PCM | ⬜ 待开始 |
-| P4 | 联网 | WiFi 连接、SNTP 校时、天气显示、大模型对话 | ⬜ 待开始 |
+| P4 | 联网 | WiFi 连接、SNTP 校时、天气显示、大模型对话 | 🔧 代码完成，待填 WiFi |
 | P5 | 摄像头 / 动画 / 游戏 | 摄像头预览、开机动画、木鱼/骰子/2048 可玩 | ⬜ 待开始 |
 
 ---
@@ -132,11 +136,37 @@
 
 ```
 xiaozhibot/
-├── platformio.ini      # 板级配置、库依赖
-├── src/main.cpp        # P0 点屏 demo，后续拆分为 bsp / ui / app 多模块
-├── include/            # 公共头文件（后续放 lv_conf.h、bsp_pins.h）
-├── lib/                # 本地库（后续放 ui 移植代码、第三方驱动）
-└── docs/               # 设计文档
+├── platformio.ini         # 板级配置、库依赖、build_flags
+├── src/
+│   ├── main.cpp           # 启动流程：LCD -> LVGL -> UI -> 联网 -> 时钟定时器
+│   ├── app_net.cpp/.h     # WiFi STA 状态机 + SNTP 对时（非阻塞）
+│   ├── app_weather.cpp/.h # Open-Meteo 天气抓取（独立 FreeRTOS 任务）
+│   ├── app_clock.cpp/.h   # LVGL 1s 定时器，刷时间/日期/星期/天气/WiFi 图标
+│   └── app_log.h          # 日志宏，统一走 USBSerial
+├── include/
+│   ├── lv_conf.h          # LVGL 配置（LV_COLOR_16_SWAP 必须为 0）
+│   ├── app_config.h       # 时区、经纬度、NTP、刷新周期
+│   └── app_secrets.h      # WiFi 账号密码（本地文件，已 gitignore）
+├── lib/
+│   └── ui/                # SquareLine 生成的 UI + ui_port.c 移植层
+└── docs/                  # 设计文档
 ```
 
 本地参考源码位于仓库外一层：`../esp_sparkbot/`（官方 Gitee 全量代码，含 7 个 example）。
+
+### WiFi 配置
+
+新建 `include/app_secrets.h`（该文件不入库）：
+
+```c
+#define APP_WIFI_SSID  "你的SSID"
+#define APP_WIFI_PASS  "你的密码"
+```
+
+不建这个文件也能编译，只是不联网，时钟停在 `--:--`。
+
+### 天气数据来源
+
+用 [Open-Meteo](https://open-meteo.com/)，**免费、免注册、不需要 API key**。官方固件用的是和风天气，需要注册账号申请 key，这里换掉了。位置在 `app_config.h` 里改 `APP_LATITUDE_S` / `APP_LONGITUDE_S` 两个字符串。
+
+天气图标（`ui_weathershow`）暂时留空——官方那套图标是打包在 `asset_weather` 里的 mmap 资源，PSRAM 未启用的情况下放不进来，等分区表和 PSRAM 解决后再补。

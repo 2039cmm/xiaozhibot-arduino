@@ -9,7 +9,11 @@
 #include "lvgl.h"
 #include "ui.h"
 
-#define LOG USBSerial
+#include "app_log.h"
+#include "app_config.h"
+#include "app_net.h"
+#include "app_weather.h"
+#include "app_clock.h"
 
 // ---------------- 面板 ----------------
 #define TFT_SCK   21
@@ -69,7 +73,7 @@ void setup()
 
   LOG.println();
   LOG.println("========================================");
-  LOG.println("  ESP-SparkBot P1 : LVGL + UI");
+  LOG.println("  ESP-SparkBot P4 : WiFi + SNTP + Weather");
   LOG.println("========================================");
   LOG.printf("  chip  : %s\n", ESP.getChipModel());
   LOG.printf("  flash : %lu MB\n", (unsigned long)(ESP.getFlashChipSize() >> 20));
@@ -107,13 +111,23 @@ void setup()
   ui_init();
   LOG.println("    ok");
 
-  LOG.println("[4] ready");
+  LOG.println("[4] net init");
+  app_net_init();
+  app_weather_start();
+  LOG.println("    ok");
+
+  LOG.println("[5] clock timer");
+  app_clock_init();
+  LOG.println("    ok");
+
+  LOG.println("[6] ready");
 }
 
 void loop()
 {
   static uint32_t last = 0;
   lv_timer_handler();
+  app_net_loop();
   delay(5);
 
   if (millis() - last > 5000) {

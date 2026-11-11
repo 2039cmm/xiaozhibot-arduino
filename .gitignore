@@ -3,3 +3,6 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
+
+# 本地 WiFi 凭据，绝不入库
+include/app_secrets.h
