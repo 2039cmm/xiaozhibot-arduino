@@ -10,6 +10,7 @@
 #include "app_clock.h"
 #include "app_net.h"
 #include "app_weather.h"
+#include "app_weather_icon.h"
 
 #include "ui.h"
 #include <time.h>
@@ -161,6 +162,7 @@ static void clock_tick(lv_timer_t *timer)
     set_text(ui_temp, temp_str);
     set_text(ui_weather, wx.text);
   }
+  app_weather_icon_update(wx.code, wx.valid);
 
   // ---- 顶栏 WiFi 图标 ----
   const bool conn = app_net_wifi_connected();

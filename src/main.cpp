@@ -13,6 +13,7 @@
 #include "app_config.h"
 #include "app_net.h"
 #include "app_weather.h"
+#include "app_weather_icon.h"
 #include "app_clock.h"
 
 // ---------------- 面板 ----------------
@@ -109,6 +110,7 @@ void setup()
 
   LOG.println("[3] ui init");
   ui_init();
+  app_weather_icon_init();   // 必须晚于 ui_init()，ui_weathershow 才存在
   LOG.println("    ok");
 
   LOG.println("[4] net init");

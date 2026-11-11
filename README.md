@@ -66,6 +66,8 @@
 
 - [x] **P4 代码落地**：WiFi STA + SNTP 对时 + Open-Meteo 天气（免 key），编译 RAM 33.9%、Flash 27.4%
 - [x] **P4 上板验证**：WiFi 连上（rssi -39）、SNTP 对时、时区 CST-8 正确、天气取到 13°C 少云、堆稳定不降
+- [x] **界面逐项核对**：按 ①–⑧ 与实机核对，顶栏 / 中文 / 裁切 / 冒号闪烁全部一致，唯一缺口是天气插画区全黑
+- [x] **天气图标 + 动画落地**：从官方 61 张 weather PNG 挑 16 张转成 LVGL 静态资源补齐 `ui_weathershow`；加入滑入、持续漂浮、换图弹跳。编译 RAM 37.4%、Flash 60.2%（RAM 无增长，图标全在 Flash）
 
 ### 未开始
 
@@ -73,7 +75,7 @@
 - [ ] IMU（无 BMI270 硬件，跳过）
 - [ ] 电量（无电池，跳过）
 - [ ] 音频（有喇叭，待定 I2S 直推还是补 ES8311）
-- [ ] 摄像头 / 动画 / 小游戏
+- [ ] 摄像头 / 其余动画（Lottie 表情）/ 小游戏（天气图标动画已完成）
 
 ### 当前工具链
 
@@ -109,7 +111,7 @@
 | P2 | 输入与传感器 | 三键翻页、BMI270 数据、电量百分比正确 | ⏸ 硬件缺失暂缓 |
 | P3 | 音频 | 能放 WAV，能录 PCM | ⬜ 待开始 |
 | P4 | 联网 | WiFi 连接、SNTP 校时、天气显示、大模型对话 | ✅ 前三项完成 |
-| P5 | 摄像头 / 动画 / 游戏 | 摄像头预览、开机动画、木鱼/骰子/2048 可玩 | ⬜ 待开始 |
+| P5 | 摄像头 / 动画 / 游戏 | 摄像头预览、开机动画、木鱼/骰子/2048 可玩 | 🔨 天气图标动画已完成，其余待开始 |
 
 ---
 
@@ -133,6 +135,9 @@
 
    往标签里写中文字面量前必须确认字在字库中。`app_clock_init()` 里有开机字形自检，缺字会打 `[font] "xxx" 缺字形: U+XXXX`。
 
+10. **图片资源也有字节序问题**：SquareLine 导出的 `TRUE_COLOR_ALPHA` 图片是大端 RGB565，本工程 `LV_COLOR_16_SWAP=0` 需要小端。直接复用官方 `ui_img_*.c` 会串色，必须从 PNG 重新转换，见「天气图标与动画」。
+11. **官方天气资源走独立分区**：`partitions.csv` 里 `weather` / `animation` / `storage` 三个 mmap 分区共约 11MB。Arduino 侧目前把图标编进 app 分区，Flash 已用到 60.2%；后续要搬 Lottie 表情、音频等大资源时，自定义分区表仍然绕不开。
+
 ---
 
 ## 七、待决策
@@ -151,15 +156,20 @@ xiaozhibot/
 ├── src/
 │   ├── main.cpp           # 启动流程：LCD -> LVGL -> UI -> 联网 -> 时钟定时器
 │   ├── app_net.cpp/.h     # WiFi STA 状态机 + SNTP 对时（非阻塞）
-│   ├── app_weather.cpp/.h # Open-Meteo 天气抓取（独立 FreeRTOS 任务）
-│   ├── app_clock.cpp/.h   # LVGL 1s 定时器，刷时间/日期/星期/天气/WiFi 图标
-│   └── app_log.h          # 日志宏，统一走 USBSerial
+│   ├── app_weather.cpp/.h      # Open-Meteo 天气抓取（独立 FreeRTOS 任务）
+│   ├── app_weather_icon.cpp/.h # WMO -> 官方天气图标映射 + 漂浮/弹跳动画
+│   ├── app_clock.cpp/.h        # LVGL 1s 定时器，刷时间/日期/星期/天气/WiFi 图标
+│   └── app_log.h               # 日志宏，统一走 USBSerial
 ├── include/
 │   ├── lv_conf.h          # LVGL 配置（LV_COLOR_16_SWAP 必须为 0）
 │   ├── app_config.h       # 时区、经纬度、NTP、刷新周期
 │   └── app_secrets.h      # WiFi 账号密码（本地文件，已 gitignore）
-├── lib/
-│   └── ui/                # SquareLine 生成的 UI + ui_port.c 移植层
+├── lib/ui/
+│   ├── ui_port.c                       # Arduino 移植层：全局对象、动画、屏加载事件
+│   └── images/ui_img_weather_icons.c   # 16 张 110x110 官方天气图标（自动生成）
+├── tools/
+│   ├── gen_weather_icons.py            # 官方 PNG -> LVGL C 数组（纯标准库）
+│   └── zh_charset_gb2312_l1.txt        # 中文字库字符集
 └── docs/                  # 设计文档
 ```
 
@@ -180,7 +190,25 @@ xiaozhibot/
 
 用 [Open-Meteo](https://open-meteo.com/)，**免费、免注册、不需要 API key**。官方固件用的是和风天气，需要注册账号申请 key，这里换掉了。位置在 `app_config.h` 里改 `APP_LATITUDE_S` / `APP_LONGITUDE_S` 两个字符串。
 
-天气图标（`ui_weathershow`）暂时留空——官方那套图标是打包在 `asset_weather` 里的 mmap 资源，PSRAM 未启用的情况下放不进来，等分区表和 PSRAM 解决后再补。
+### 天气图标与动画
+
+官方把 61 张 110×110 PNG 在构建期转成 QOI，塞进独立的 `weather` mmap 分区，运行时靠 `esp_mmap_assets` + `esp_lv_decoder` 按和风天气图标代码动态加载（`main/app/app_animation.c` 的 `updata_weather_icon()`）。Arduino 工程没有自定义分区表、没有那套解码器，PSRAM 也还没起来，所以改成**编译期静态资源**：
+
+- `tools/gen_weather_icons.py`（纯标准库，不需要 Pillow）从官方 `weather/*.png` 解码 RGBA8，转成 `LV_IMG_CF_TRUE_COLOR_ALPHA`（小端 RGB565 + alpha，3 字节/像素），输出 `lib/ui/images/ui_img_weather_icons.c`
+- 挑 16 张覆盖全部 Open-Meteo WMO code，共 580800 字节 ≈ 567KB Flash，**RAM 增加 0**（`const` 数据只进 Flash）
+- `src/app_weather_icon.cpp` 做 WMO → 和风代码映射，天气代码变化时换图；每秒由 `app_clock` 调用，内部去重
+- 动画三层：① 开机 `weather_Animation()` 从 x=-200 滑到 -60（原本就在 `ui_port.c`，之前没设 src 完全看不见）；② 持续 ±4px 上下漂浮，4.4s 一个来回；③ 换图时 190→255 的 zoom 弹跳
+- 天气尚未拉到时显示官方 `999`（N/A）图标，和官方 `find_icon_index()` 的回退行为一致
+
+重新生成：
+
+```bash
+python tools/gen_weather_icons.py --sheet        # 61 张官方图标拼图，核对语义用
+python tools/gen_weather_icons.py                # 按 DEFAULT_CODES 生成 C 资源
+python tools/gen_weather_icons.py 100 101 ...    # 自定义图标集合
+```
+
+**字节序陷阱**：官方 SquareLine 导出的 `ui_img_clody_png.c` 是**大端** RGB565（高字节在前），本工程 `LV_COLOR_16_SWAP=0` 要求**小端**。直接搬官方 C 数组会整体串色（橙太阳变紫、白云变绿），必须从原始 PNG 重算。转换后可把生成的数组反解成 PNG 与原图比对来验证。
 
 ### 中文字体（重要）
 
