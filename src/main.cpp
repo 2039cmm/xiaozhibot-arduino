@@ -52,7 +52,7 @@ static void lv_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *c
   const int32_t w = area->x2 - area->x1 + 1;
   const int32_t h = area->y2 - area->y1 + 1;
 
-  // LV_COLOR_16_SWAP=1 时 LVGL 已按面板字节序排好，可直接推
+  // LV_COLOR_16_SWAP=0：LVGL 输出小端，由 GFX 的 writePixels 负责转大端
   gfx->draw16bitRGBBitmap(area->x1, area->y1, (uint16_t *)color_p, w, h);
 
   lv_disp_flush_ready(drv);

@@ -51,6 +51,9 @@ void ui_event_home(lv_event_t *e)
         opaon_Animation(ui_weekday, 0);
         opaon_Animation(ui_date, 0);
         falldown_Animation(title_panel, 0);
+        // 官方挂在 ui____initial_actions0 的 LOAD_START 上；移植时省掉了那个
+        // 隐藏屏，直接并入 home 的加载事件，效果一致且少一次切屏。
+        blink_Animation(ui_colon, 0);
         lv_obj_set_parent(title_panel, ui_Panel1);
     }
 }
