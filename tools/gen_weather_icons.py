@@ -38,10 +38,10 @@ SHEET = os.path.join(os.path.dirname(PROJECT), "tmp_weather_sheet.png")
 
 # 覆盖 Open-Meteo WMO code 所需的代表性图标（和风天气代码）
 DEFAULT_CODES = [
-    "100",  # 晴           WMO 0
-    "103",  # 晴间多云      WMO 1 少云
-    "101",  # 多云          WMO 2
-    "104",  # 阴            WMO 3
+    "100",  # 晴           WMO 0（纯太阳）
+    "103",  # 晴间多云      WMO 1 少云（大太阳 + 一层薄云）
+    "104",  # 多云          WMO 2（太阳被云遮住大半）
+    "102",  # 阴            WMO 3（纯厚云，无太阳）
     "501",  # 雾            WMO 45/48
     "300",  # 阵雨          WMO 80-82
     "302",  # 雷阵雨        WMO 95

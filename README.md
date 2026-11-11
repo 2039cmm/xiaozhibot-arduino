@@ -68,6 +68,7 @@
 - [x] **P4 上板验证**：WiFi 连上（rssi -39）、SNTP 对时、时区 CST-8 正确、天气取到 13°C 少云、堆稳定不降
 - [x] **界面逐项核对**：按 ①–⑧ 与实机核对，顶栏 / 中文 / 裁切 / 冒号闪烁全部一致，唯一缺口是天气插画区全黑
 - [x] **天气图标 + 动画落地**：从官方 61 张 weather PNG 挑 16 张转成 LVGL 静态资源补齐 `ui_weathershow`；加入滑入、持续漂浮、换图弹跳。编译 RAM 37.4%、Flash 60.2%（RAM 无增长，图标全在 Flash）
+- [x] **图标离线验证 + 语义修正**：反解 C 数组与官方 PNG 逐像素比对，16 张小端误差全为 0，确认没串色；发现官方 `104` 实际画的是「太阳被云遮」，把「阴」改指 `102` 纯厚云，避免阴天出太阳
 
 ### 未开始
 
@@ -169,6 +170,7 @@ xiaozhibot/
 │   └── images/ui_img_weather_icons.c   # 16 张 110x110 官方天气图标（自动生成）
 ├── tools/
 │   ├── gen_weather_icons.py            # 官方 PNG -> LVGL C 数组（纯标准库）
+│   ├── verify_weather_icons.py         # 反解 C 数组验证字节序 + 黑底预览图
 │   └── zh_charset_gb2312_l1.txt        # 中文字库字符集
 └── docs/                  # 设计文档
 ```
@@ -196,6 +198,7 @@ xiaozhibot/
 
 - `tools/gen_weather_icons.py`（纯标准库，不需要 Pillow）从官方 `weather/*.png` 解码 RGBA8，转成 `LV_IMG_CF_TRUE_COLOR_ALPHA`（小端 RGB565 + alpha，3 字节/像素），输出 `lib/ui/images/ui_img_weather_icons.c`
 - 挑 16 张覆盖全部 Open-Meteo WMO code，共 580800 字节 ≈ 567KB Flash，**RAM 增加 0**（`const` 数据只进 Flash）
+- **按图形观感映射，不盲信和风代码命名**：这套 PNG 里 `104` 画的是「太阳被云遮住」，并不是阴天。WMO 0/1/2/3 分别对应 `100`（纯太阳）/ `103`（大太阳 + 薄云）/ `104`（太阳被云遮）/ `102`（纯厚云、无太阳），避免「阴」天却出太阳
 - `src/app_weather_icon.cpp` 做 WMO → 和风代码映射，天气代码变化时换图；每秒由 `app_clock` 调用，内部去重
 - 动画三层：① 开机 `weather_Animation()` 从 x=-200 滑到 -60（原本就在 `ui_port.c`，之前没设 src 完全看不见）；② 持续 ±4px 上下漂浮，4.4s 一个来回；③ 换图时 190→255 的 zoom 弹跳
 - 天气尚未拉到时显示官方 `999`（N/A）图标，和官方 `find_icon_index()` 的回退行为一致
@@ -206,9 +209,12 @@ xiaozhibot/
 python tools/gen_weather_icons.py --sheet        # 61 张官方图标拼图，核对语义用
 python tools/gen_weather_icons.py                # 按 DEFAULT_CODES 生成 C 资源
 python tools/gen_weather_icons.py 100 101 ...    # 自定义图标集合
+python tools/verify_weather_icons.py             # 反解 C 数组，验证字节序 + 生成黑底预览图
 ```
 
-**字节序陷阱**：官方 SquareLine 导出的 `ui_img_clody_png.c` 是**大端** RGB565（高字节在前），本工程 `LV_COLOR_16_SWAP=0` 要求**小端**。直接搬官方 C 数组会整体串色（橙太阳变紫、白云变绿），必须从原始 PNG 重算。转换后可把生成的数组反解成 PNG 与原图比对来验证。
+**字节序陷阱**：官方 SquareLine 导出的 `ui_img_clody_png.c` 是**大端** RGB565（高字节在前），本工程 `LV_COLOR_16_SWAP=0` 要求**小端**。直接搬官方 C 数组会整体串色（橙太阳变紫、白云变绿），必须从原始 PNG 重算。
+
+`tools/verify_weather_icons.py` 可以在**不上板**的情况下排掉这个雷：把生成的 C 数组反解回图片，分别按小端 / 大端还原，与「源 PNG 经过同样 RGB565 量化」的参考图逐像素比对。字节序正确时小端误差必须为 **0**，大端对照误差约 60–90 / 通道；同时输出 `../tmp_weather_icons_verify.png`，16 张图标合成到黑底（模拟实机 LCD），可直接核对颜色与透明区。
 
 ### 中文字体（重要）
 

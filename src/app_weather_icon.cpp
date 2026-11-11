@@ -18,9 +18,9 @@
 
 // 由 tools/gen_weather_icons.py 生成的静态资源
 LV_IMG_DECLARE(ui_img_wx_100);   // 晴
-LV_IMG_DECLARE(ui_img_wx_103);   // 晴间多云
-LV_IMG_DECLARE(ui_img_wx_101);   // 多云
-LV_IMG_DECLARE(ui_img_wx_104);   // 阴
+LV_IMG_DECLARE(ui_img_wx_103);   // 晴间多云 / 少云
+LV_IMG_DECLARE(ui_img_wx_104);   // 多云（太阳被云遮）
+LV_IMG_DECLARE(ui_img_wx_102);   // 阴（纯厚云）
 LV_IMG_DECLARE(ui_img_wx_501);   // 雾
 LV_IMG_DECLARE(ui_img_wx_300);   // 阵雨
 LV_IMG_DECLARE(ui_img_wx_302);   // 雷阵雨
@@ -39,10 +39,12 @@ typedef struct {
   const char         *name;      // 官方和风天气代码，方便串口对账
 } wx_icon_t;
 
+// 注意：这套官方 PNG 的 104 实际画的是「太阳被云遮住」，与和风文档里
+// 「104 = 阴」的命名不符。这里按图形观感映射，避免「阴」天却出太阳。
 static const wx_icon_t k_sunny   = { &ui_img_wx_100, "100" };
-static const wx_icon_t k_partly  = { &ui_img_wx_103, "103" };
-static const wx_icon_t k_cloudy  = { &ui_img_wx_101, "101" };
-static const wx_icon_t k_overcast= { &ui_img_wx_104, "104" };
+static const wx_icon_t k_partly  = { &ui_img_wx_103, "103" };  // 少云
+static const wx_icon_t k_cloudy  = { &ui_img_wx_104, "104" };  // 多云
+static const wx_icon_t k_overcast= { &ui_img_wx_102, "102" };  // 阴
 static const wx_icon_t k_fog     = { &ui_img_wx_501, "501" };
 static const wx_icon_t k_shower  = { &ui_img_wx_300, "300" };
 static const wx_icon_t k_thunder = { &ui_img_wx_302, "302" };
