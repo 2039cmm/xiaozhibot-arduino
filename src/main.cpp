@@ -15,6 +15,14 @@
 #include "app_weather.h"
 #include "app_weather_icon.h"
 #include "app_clock.h"
+#include "app_touch.h"
+#include "app_audio.h"
+
+// 测试旋律（由 tools/gen_test_wav.py 生成，16000Hz 单声道 16bit）
+extern "C" {
+extern const uint8_t  g_test_wav[];
+extern const uint32_t g_test_wav_len;
+}
 
 // ---------------- 面板 ----------------
 #define TFT_SCK   21
@@ -74,7 +82,7 @@ void setup()
 
   LOG.println();
   LOG.println("========================================");
-  LOG.println("  ESP-SparkBot P4 : WiFi + SNTP + Weather");
+  LOG.println("  ESP-SparkBot : LVGL + Weather + Touch");
   LOG.println("========================================");
   LOG.printf("  chip  : %s\n", ESP.getChipModel());
   LOG.printf("  flash : %lu MB\n", (unsigned long)(ESP.getFlashChipSize() >> 20));
@@ -122,7 +130,22 @@ void setup()
   app_clock_init();
   LOG.println("    ok");
 
-  LOG.println("[6] ready");
+  LOG.println("[6] touch init");
+  app_touch_init();   // 采样基准值，翻页依赖 ui_pages，须在 ui_init() 之后
+  LOG.println("    ok");
+
+  LOG.println("[7] audio init");
+  app_audio_init();   // I2S 先起 MCLK，再配 ES8311
+  if (app_audio_ready()) {
+    LOG.println("    play test wav");
+    if (!app_audio_play_wav(g_test_wav, g_test_wav_len)) {
+      LOG.println("    wav failed, fallback beep");
+      app_audio_beep();
+    }
+  }
+  LOG.println("    ok");
+
+  LOG.println("[8] ready");
 }
 
 void loop()
@@ -130,6 +153,7 @@ void loop()
   static uint32_t last = 0;
   lv_timer_handler();
   app_net_loop();
+  app_touch_loop();
   delay(5);
 
   if (millis() - last > 5000) {

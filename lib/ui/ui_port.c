@@ -80,12 +80,12 @@ void ui_init(void)
     ui_title_screen_init();
     ui_home_screen_init();
 
+    // 只把「有实质内容的功能页」放进翻页列表。title 屏是开机过渡用的
+    // 空白状态栏屏（背景透明 = 白屏），不属于可翻页的功能页，故不入列。
     ui_pages[0].page = ui_home;
     ui_pages[0].name = "home";
-    ui_pages[1].page = ui_title;
-    ui_pages[1].name = "title";
 
-    for (int i = 2; i < 7; i++) {
+    for (int i = 1; i < 7; i++) {
         ui_pages[i].page = 0;
         ui_pages[i].name = "";
     }

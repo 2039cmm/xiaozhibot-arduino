@@ -70,12 +70,16 @@
 - [x] **天气图标 + 动画落地**：从官方 61 张 weather PNG 挑 16 张转成 LVGL 静态资源补齐 `ui_weathershow`；加入滑入、持续漂浮、换图弹跳。编译 RAM 37.4%、Flash 60.2%（RAM 无增长，图标全在 Flash）
 - [x] **图标离线验证 + 语义修正**：反解 C 数组与官方 PNG 逐像素比对，16 张小端误差全为 0，确认没串色；发现官方 `104` 实际画的是「太阳被云遮」，把「阴」改指 `102` 纯厚云，避免阴天出太阳
 
+- [x] **触摸三键落地**：`src/app_touch.cpp`，`touchRead()` + 自适应阈值 + 3 次消抖 + 短按/长按 2s。T1=回首页、T2=上一页、T3=下一页；按下时屏幕底部弹 toast（`lv_layer_top()` 标签，900ms 自动隐藏）并播按键音
+- [x] **触摸上板验证**：加焊后三路全部独立工作（T1 32145→58914、T2 26981→102983、T3 32769→89068），互不串扰
+- [x] **音频落地（播放）**：新增 `src/es8311.cpp`（I2C 配寄存器）+ `src/app_audio.cpp`（I2S + WAV 播放）。16000Hz / 16bit / 立体声 / MCLK=256fs，开机自动播放测试旋律
+- [x] **音频上板验证**：`[es8311] found on I2C 0x18` → `[audio] wav: 16000 Hz, 1 ch, 16 bit` → 喇叭输出 4 个清晰上行音
+
 ### 未开始
 
-- [ ] 触摸（板上无触摸焊盘，待定：接铜箔还是改轻触按键）
 - [ ] IMU（无 BMI270 硬件，跳过）
 - [ ] 电量（无电池，跳过）
-- [ ] 音频（有喇叭，待定 I2S 直推还是补 ES8311）
+- [ ] 录音（ES7210 需麦克风，硬件未购）
 - [ ] 摄像头 / 其余动画（Lottie 表情）/ 小游戏（天气图标动画已完成）
 
 ### 当前工具链
@@ -109,8 +113,8 @@
 |---|---|---|---|
 | P0 | 点屏 + 工程骨架 | 彩条无残影，文字清晰 | ✅ 完成 |
 | P1 | LVGL + UI 迁移 | title / home 正常显示 | ✅ 完成 |
-| P2 | 输入与传感器 | 三键翻页、BMI270 数据、电量百分比正确 | ⏸ 硬件缺失暂缓 |
-| P3 | 音频 | 能放 WAV，能录 PCM | ⬜ 待开始 |
+| P2 | 输入与传感器 | 三键翻页、BMI270 数据、电量百分比正确 | 🔨 触摸三键 ✅，IMU/电量硬件缺失 |
+| P3 | 音频 | 能放 WAV，能录 PCM | 🔨 播放（ES8311+WAV）✅，录音待麦克风 |
 | P4 | 联网 | WiFi 连接、SNTP 校时、天气显示、大模型对话 | ✅ 前三项完成 |
 | P5 | 摄像头 / 动画 / 游戏 | 摄像头预览、开机动画、木鱼/骰子/2048 可玩 | 🔨 天气图标动画已完成，其余待开始 |
 
@@ -160,6 +164,10 @@ xiaozhibot/
 │   ├── app_weather.cpp/.h      # Open-Meteo 天气抓取（独立 FreeRTOS 任务）
 │   ├── app_weather_icon.cpp/.h # WMO -> 官方天气图标映射 + 漂浮/弹跳动画
 │   ├── app_clock.cpp/.h        # LVGL 1s 定时器，刷时间/日期/星期/天气/WiFi 图标
+│   ├── app_touch.cpp/.h        # 三键电容触摸：自适应阈值 + 消抖 + 长按 + 屏幕 toast
+│   ├── es8311.cpp/.h           # 极简 ES8311 codec 驱动（I2C 配寄存器，只做播放）
+│   ├── app_audio.cpp/.h        # I2S 主模式 + 正弦提示音 + 内存 WAV 播放
+│   ├── test_tone_wav.c         # 开机测试旋律（自动生成，勿手改）
 │   └── app_log.h               # 日志宏，统一走 USBSerial
 ├── include/
 │   ├── lv_conf.h          # LVGL 配置（LV_COLOR_16_SWAP 必须为 0）
@@ -171,6 +179,7 @@ xiaozhibot/
 ├── tools/
 │   ├── gen_weather_icons.py            # 官方 PNG -> LVGL C 数组（纯标准库）
 │   ├── verify_weather_icons.py         # 反解 C 数组验证字节序 + 黑底预览图
+│   ├── gen_test_wav.py                 # 生成测试旋律 WAV -> src/test_tone_wav.c
 │   └── zh_charset_gb2312_l1.txt        # 中文字库字符集
 └── docs/                  # 设计文档
 ```
@@ -215,6 +224,34 @@ python tools/verify_weather_icons.py             # 反解 C 数组，验证字�
 **字节序陷阱**：官方 SquareLine 导出的 `ui_img_clody_png.c` 是**大端** RGB565（高字节在前），本工程 `LV_COLOR_16_SWAP=0` 要求**小端**。直接搬官方 C 数组会整体串色（橙太阳变紫、白云变绿），必须从原始 PNG 重算。
 
 `tools/verify_weather_icons.py` 可以在**不上板**的情况下排掉这个雷：把生成的 C 数组反解回图片，分别按小端 / 大端还原，与「源 PNG 经过同样 RGB565 量化」的参考图逐像素比对。字节序正确时小端误差必须为 **0**，大端对照误差约 60–90 / 通道；同时输出 `../tmp_weather_icons_verify.png`，16 张图标合成到黑底（模拟实机 LCD），可直接核对颜色与透明区。
+
+### 音频输出（ES8311 + I2S）
+
+板载 ES8311 codec：I2C 控制（SDA=4 / SCL=5 / 0x18）+ I2S 出数据（MCLK=45 BCLK=39 LRCK=41 DOUT=42）。
+
+链路与初始化顺序：
+
+```
+ESP32-S3 I2S(主, 先启动以输出 MCLK) ──> ES8311(从, 再经 I2C 配寄存器) ──> HP ──> 喇叭
+```
+
+- `src/es8311.cpp`：寄存器序列照 Espressif 官方 `esp_codec_dev` 的 `es8311.c` —— ①复位上电 → ②时钟分频 → ③I2S 格式(slave/16bit) → ④模拟电路上电 → 音量(`REG32`) + 取消静音(`REG31` bit6/5)
+- `src/app_audio.cpp`：`i2s_driver_install` 主模式、16000Hz / 16bit / 立体声、`I2S_MCLK_MULTIPLE_256`（MCLK=4.096MHz）；提供 `app_audio_tone()`（正弦提示音）和 `app_audio_play_wav()`（内存 WAV）
+- `app_audio_play_wav()` 解析 RIFF/WAVE 的 `fmt `/`data` 块，支持 16bit PCM 单/双声道（单声道自动复制左右），采样率不同时自动重配 I2S 时钟 + ES8311 分频
+
+**三个必踩的坑：**
+
+1. **框架是 IDF 4.4，只有传统 `driver/i2s.h`**（`i2s_driver_install` + `i2s_write`），没有 IDF5 的 `i2s_std.h`
+2. **必须先启动 I2S 让它输出 MCLK，再配置 ES8311 时钟寄存器**，顺序反了 codec 时钟状态机锁不住 → 全程无声
+3. **时钟分频寄存器 0x02/0x06/0x07 是读-改-写**，保留位依赖复位默认值，必须先复位再改
+
+生成测试音频（C-E-G-C 上行琶音，16000Hz 单声道 16bit）：
+
+```bash
+python tools/gen_test_wav.py     # -> src/test_tone_wav.c（同时输出 tools/test_tone.wav 可试听）
+```
+
+**注意**：生成物放 `src/` 而不是 `lib/`——PlatformIO 不会编译没有 `src/` 子目录的 `lib/<名字>/`，放 lib 里会链接失败。另外 `i2s_set_clk()` 第 4 参是 `i2s_channel_t`（`I2S_CHANNEL_STEREO`），不是 `i2s_channel_fmt_t`。
 
 ### 中文字体（重要）
 
